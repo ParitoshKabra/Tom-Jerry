@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
-from django.db.models.deletion import CASCADE
+from django.db.models.deletion import CASCADE, PROTECT
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from rest_framework.authtoken.models import Token
@@ -15,9 +15,9 @@ AADHAR_CARD_REGEX = RegexValidator(r'^[-+]?[1-9]\d*$')
 
 
 class Address(models.Model):
-    aadhar = models.CharField(max_length=500)
-    country = models.CharField(max_length=500)
-    district = models.CharField(max_length=500)
+    aadhar = models.CharField(max_length=500, null=True)
+    country = models.CharField(max_length=500, null=True)
+    district = models.CharField(max_length=500, null=True)
     landmark = models.CharField(max_length=500, null=True, blank=True)
     house = models.CharField(max_length=500, null=True, blank=True)
     loc = models.CharField(max_length=500, null=True, blank=True)
@@ -36,9 +36,9 @@ class User(AbstractUser):
         verbose_name='email address', null=True, blank=True)
     phone = models.CharField(max_length=500)
     lastModified = models.DateTimeField(null=True, blank=True)
-    name = models.CharField(max_length=500)
+    name = models.CharField(max_length=500, null=True)
     address = models.ForeignKey(
-        to=Address, on_delete=CASCADE, blank=True, null=True)
+        to=Address, on_delete=models.PROTECT, blank=True, null=True)
     REQUIRED_FIELDS = ["name"]
 
     def __str__(self):
@@ -57,10 +57,10 @@ class Audit(models.Model):
 
 class Request_Sent(models.Model):
     client = models.ForeignKey(
-        to=User, on_delete=CASCADE, related_name='client2')
+        to=User, on_delete=CASCADE, related_name='request_client')
     introducer = models.ForeignKey(
-        to=User, on_delete=CASCADE, related_name="introducer2")
-    status = models.BooleanField(default=False)
+        to=User, on_delete=CASCADE, related_name="request_introducer")
+    status = models.CharField(default="empty", max_length=10)
 
 
 class Request_Confirm(models.Model):
@@ -69,11 +69,12 @@ class Request_Confirm(models.Model):
     introducer = models.ForeignKey(
         to=User, on_delete=CASCADE, related_name='introducer3')
     status = models.BooleanField(default=False)
-    adderss = models.JSONField(null=True, blank=True)
+    address = models.ForeignKey(
+        to=Address, on_delete=CASCADE, related_name='address', null=True, blank=True)
     lastModified = models.CharField(max_length=255, null=True, blank=True)
     password = models.CharField(max_length=255)
-    passAttempt = models.IntegerField()
-    addressAttempt = models.IntegerField()
+    passAttempt = models.IntegerField(default=0)
+    addressAttempt = models.IntegerField(default=0)
 
 
 @receiver(post_save, sender=settings.AUTH_USER_MODEL)

@@ -1,8 +1,8 @@
 from django.http.response import HttpResponse, JsonResponse
 import requests
-from rest_framework import viewsets
+from rest_framework import views, viewsets, mixins
 from .models import Address, User, Request_Sent, Request_Confirm, Audit
-from .serializers import UserSerializer, SentSerializer, ConfirmSerializer, AuditSerializer
+from .serializers import UserSerializer, SentSerializer, ConfirmSerializer, AuditSerializer, ClientSentSerializer
 import requests
 import json
 import base64
@@ -17,14 +17,15 @@ import xml.etree.ElementTree as ET
 import random
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import SessionAuthentication, TokenAuthentication
+from rest_framework.authtoken.models import Token
 import random
 from .encryption_util import *
-
+from .permissions import *
 # Create your views here.
 
-otpTxnNumber = ""
-uid = "999988636660"
-captchaTxnId = ""
+# otpTxnNumber = ""
+# uid = "999916184317"
+# captchaTxnId = ""
 
 
 class UserViewSets(viewsets.ModelViewSet):
@@ -43,17 +44,23 @@ class SentViewSets(viewsets.ModelViewSet):
     authentication_classes = [SessionAuthentication, TokenAuthentication]
     queryset = Request_Sent.objects.all()
     serializer_class = SentSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SentReceivePermissions]
 
     def perform_create(self, serializer, *args, **kargs):
         serializer.save(client=self.request.user)
+
+
+class ClientSentViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin):
+    queryset = User.objects.all()
+    serializer_class = ClientSentSerializer
+    permission_classes = [IsAuthenticated, ClientSentPermission]
 
 
 class ConfirmViewSets(viewsets.ModelViewSet):
     authentication_classes = [SessionAuthentication, TokenAuthentication]
     queryset = Request_Confirm.objects.all()
     serializer_class = ConfirmSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, SentReceivePermissions]
 
     def perform_create(self, serializer, *args, **kargs):
         serializer.save(introducer=self.request.user)
@@ -63,11 +70,11 @@ class AuditViewSets(viewsets.ModelViewSet):
     authentication_classes = [SessionAuthentication, TokenAuthentication]
     queryset = Audit.objects.all()
     serializer_class = AuditSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, AuditPermissions]
 
 
 def capchaViewset(request):
-    global captchaTxnId
+    # global captchaTxnId
     captcha_url = "https://stage1.uidai.gov.in/unifiedAppAuthService/api/v2/get/captcha"
     data = {
         "langCode": "en",
@@ -91,7 +98,7 @@ def capchaViewset(request):
     return JsonResponse({"image": base64_str, "trxnId": captchaTxnId})
 
 
-def otpGeneratorViewset(request, capcha, id):
+def otpGeneratorViewset(request, capcha, id, uid):
     """"
     if captcha is invalid
     {'httpStatus': 'OK', 'message': 'Invalid Captcha', 'code': 400, 'transactionId': 'f7f600ab-592d-48dd-9c2f-513517f86872:MOBILE_NO',
@@ -111,11 +118,11 @@ def otpGeneratorViewset(request, capcha, id):
     }
     response = requests.post(otp_url, data=json.dumps(data),
                              headers=headers, verify=True)
-    global otpTxnNumber
+    # global otpTxnNumber
     print(response.json())
     if(response.json()['status'] == "Success"):
         otpTxnNumber = (response.json())['txnId']
-        return JsonResponse({'message': (response.json())["txnId"], 'status': "Success"})
+        return JsonResponse({'message': otpTxnNumber, 'status': "Success"})
     elif (response.json()['status'] == "Failure"):
         print("helo")
         return JsonResponse({'message': (response.json())["message"], 'status': "Failure"})
@@ -181,7 +188,6 @@ def eKYC(request, otp, id, uid):
             list = User.objects.all()
             exist = None
             for x in list:
-                exist
                 if(decrypt(x.username) == uid):
                     exist = x.id
                     break
@@ -247,7 +253,13 @@ def eKYC(request, otp, id, uid):
                     name=encrypt(name),
                     address=address
                 )
-
-        return HttpResponse("done")
+        if(exist == None):
+            users = User.objects.all()
+            token = Token.objects.get(user=users[users.count()-1])
+            thisUser = users[users.count()-1].id
+        else:
+            token = Token.objects.get(user=User.objects.get(id=exist))
+            thisUser = exist
+        return JsonResponse({"message": token.key, "id": thisUser, 'status': "Success"})
     else:
-        return JsonResponse({"message": res.json()['errorDetails']['messageEnglish'], "test": "1"})
+        return JsonResponse({"message": res.json()['errorDetails']['messageEnglish'], "status": "Fail"})
